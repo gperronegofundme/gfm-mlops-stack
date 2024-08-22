@@ -1,0 +1,80 @@
+import sys
+import pathlib
+import argparse
+from mlflow.tracking import MlflowClient
+
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.resolve()))
+{{if (eq .input_include_models_in_unity_catalog "no")}}from utils import get_deployed_model_stage_for_env{{end}}
+
+
+class ModelDeployer:
+    def __init__(self, model_uri, env):
+        self.model_uri = model_uri
+        self.env = env
+        self.model_name, self.version = self.parse_model_uri()
+
+    def parse_model_uri(self):
+        """Parses the model URI and returns the model name and version."""
+        _, model_name, version = self.model_uri.split("/")
+        return model_name, version
+
+    {{ if (eq .input_include_models_in_unity_catalog "no") }}
+    def deploy(model_uri, env):
+        """
+        Deploys an already-registered model produced by moving it into the appropriate stage for model deployment.
+
+        :param model_uri: URI of the model to deploy. Must be in the format "models:/<name>/<version-id>", as described in
+                        https://www.mlflow.org/docs/latest/model-registry.html#fetching-an-mlflow-model-from-the-model-registry
+        :param env: name of the environment in which we're performing deployment, i.e one of "dev", "staging", "prod".
+                    Defaults to "dev"
+        :return:
+        """
+        _, model_name, version = model_uri.split("/")
+        client = MlflowClient()
+        mv = client.get_model_version(model_name, version)
+        target_stage = get_deployed_model_stage_for_env(env)
+        if mv.current_stage != target_stage:
+            client.transition_model_version_stage(
+                name=model_name,
+                version=version,
+                stage=target_stage,
+                archive_existing_versions=True,
+            )
+    print(f"Successfully deployed model with URI {model_uri} to {env}")
+    {{else}}
+    def deploy(self):
+        """Deploys the model by setting the appropriate alias."""
+        print(f"Deployment running in env: {self.env}")
+        
+        client = MlflowClient(registry_uri="databricks-uc")
+        mv = client.get_model_version(self.model_name, self.version)
+        print(f"Model version aliases: {mv.aliases}")
+        
+        target_alias = "champion"
+        if target_alias not in mv.aliases:
+            client.set_registered_model_alias(
+                name=self.model_name, alias=target_alias, version=self.version
+            )
+            print(f"Assigned alias '{target_alias}' to model version {self.model_uri}.")
+            
+            if target_alias == "champion" and "challenger" in mv.aliases:
+                print(f"Removing 'challenger' alias from model version {self.model_uri}.")
+                client.delete_registered_model_alias(name=self.model_name, alias="challenger")
+    {{end}}
+
+    @staticmethod
+    def parse_arguments():
+        """Parses command-line arguments."""
+        parser = argparse.ArgumentParser(description="Deploy an MLflow model.")
+        parser.add_argument('--env', type=str, choices=['dev', 'staging', 'prod'], default='dev',
+                            help="Environment to deploy the model (default: dev).")
+        return parser.parse_args()
+
+def main():
+    args = ModelDeployer.parse_arguments()
+    model_uri = dbutils.jobs.taskValues.get("Train", "model_uri", debugValue="")
+    deployer = ModelDeployer(model_uri=model_uri, env=args.env)
+    deployer.deploy()
+
+if __name__ == "__main__":
+    main()

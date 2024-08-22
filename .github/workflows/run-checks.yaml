@@ -23,7 +23,7 @@ jobs:
             pip install -r dev-requirements.txt
       - name: Generate CICD Zip
         run: |
-          cd template/{{.input_root_dir}}
+          cd template/{{databricks_models}}
           cp --parents .github/workflows/\{\{.input_project_name\}\}-* cicd/template
           cp --parents .azure/devops-pipelines/\{\{.input_project_name\}\}-* cicd/template
           tar -czvf cicd.tar.gz cicd

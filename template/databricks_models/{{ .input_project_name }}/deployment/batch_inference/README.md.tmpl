@@ -1,0 +1,15 @@
+# Batch Inference
+
+## Prepare the batch inference input table for the example Project
+# Please run the following code in a notebook to generate the example batch inference input table.
+
+```
+df = spark.table(
+    "delta.`dbfs:/databricks-datasets/nyctaxi-with-zipcodes/subsampled`"
+).drop("fare_amount")
+
+df.write.mode("overwrite").saveAsTable(
+    {{ if (eq .input_include_models_in_unity_catalog `no`) }}name="hive_metastore.default.taxi_scoring_sample"
+    {{- else -}}name="<catalog>.ml_team.feature_store_inference_input"{{ end }}
+)
+```

@@ -4,12 +4,12 @@ on:
     branches:
       - main
     paths:
-      - 'template/{{.input_root_dir}}/.github/workflows/{{.input_project_name}}**'
-      - 'template/{{.input_root_dir}}/.azure/devops-pipelines/{{.input_project_name}}**'
+      - 'template/{{databricks_models}}/.github/workflows/{{.input_project_name}}**'
+      - 'template/{{databricks_models}}/.azure/devops-pipelines/{{.input_project_name}}**'
 
 defaults:
   run:
-    working-directory: template/{{.input_root_dir}}
+    working-directory: template/{{databricks_models}}
 
 
 jobs:

@@ -1,0 +1,161 @@
+import argparse
+import mlflow
+import mlflow.{{ .input_mlflow_flavor }}  # Import the MLflow flavor used for logging
+from mlflow.tracking import MlflowClient
+from pyspark.sql import SparkSession
+
+class GeneralModelTrainer:
+    def __init__(self, experiment_name, model_name, env, data_loader, model_trainer):
+        self.experiment_name = experiment_name
+        self.model_name = model_name
+        self.env = env
+        self.data_loader = data_loader
+        self.model_trainer = model_trainer
+        self.mlflow_client = MlflowClient()
+
+    def setup_mlflow(self):
+        """Sets up the MLflow experiment and registry URI."""
+        mlflow.set_experiment(self.experiment_name)
+        {{- if (eq .input_include_models_in_unity_catalog "yes") }}
+        mlflow.set_registry_uri('databricks-uc')
+        {{end -}}
+
+    def get_latest_model_version(self):
+        """Gets the latest version of the model from the MLflow registry."""
+        latest_version = 1
+        for mv in self.mlflow_client.search_model_versions(f"name='{self.model_name}'"):
+            version_int = int(mv.version)
+            if version_int > latest_version:
+                latest_version = version_int
+        return latest_version
+
+    def load_data(self):
+        """Loads data using the provided data loader function."""
+        print("Loading data...")
+        return self.data_loader()
+
+    def train_and_log_model(self, data):
+        """Trains a model using the provided model trainer function and logs it to MLflow."""
+        print("Training model...")
+        model, X_train_sample = self.model_trainer(data)
+
+        print("Logging model...")
+        # Log the model to MLflow
+        mlflow.{{ .input_mlflow_flavor }}.log_model(
+            model,
+            artifact_path="model_artifact",
+            input_example=X_train_sample,  # Log an example of the input data
+            registered_model_name=self.model_name
+        )
+
+        # Return the model version and URI
+        model_version = self.get_latest_model_version()
+        model_uri = f"models:/{self.model_name}/{model_version}"
+        print(f"Successfully logged model! Model URI: {model_uri}")
+        return model_uri, self.model_name, model_version
+
+    def store_and_exit(self, model_uri, model_name, model_version):
+        """Stores task values and exits (used for pipeline integration)."""
+        print("Setting task values...")
+        # Here you can add code to store these values in your CI/CD pipeline or other systems
+        print(f"Model URI: {model_uri}")
+        print(f"Model Name: {model_name}")
+        print(f"Model Version: {model_version}")
+        dbutils.jobs.taskValues.set("model_uri", model_uri)
+        dbutils.jobs.taskValues.set("model_name", model_name)
+        dbutils.jobs.taskValues.set("model_version", model_version)
+
+
+    @staticmethod
+    def parse_arguments():
+        """Parses command-line arguments."""
+        parser = argparse.ArgumentParser(description="Train and log an ML model with MLflow.")
+        parser.add_argument('--experiment-name', type=str, required=True,
+                            help="MLflow experiment name.")
+        {{- if (eq .input_include_models_in_unity_catalog "no") }}
+        parser.add_argument('--model-name', type=str, required=True, default="dev-{{template `model_name` .}}"
+                            help="Model name.")
+        {{else}}
+        parser.add_argument('--model-name', type=str, required=True, default="dev.ml_team.{{template `model_name` .}}",
+                            help="Full (three-level) model name.")
+        {{end -}}
+        parser.add_argument('--env', type=str, choices=['dev', 'staging', 'prod'], default='dev',
+                            help="Environment name (default: dev).")
+        return parser.parse_args()
+
+def main():
+    def example_data_loader():
+        """
+        Example data loader that returns a Spark DataFrame.
+
+        This function is intended to be replaced with your own data loading code.
+        It initializes a Spark session, executes a SQL query to retrieve data from a specified
+        table, and returns the resulting Spark DataFrame.
+
+        Returns:
+        --------
+        df : pyspark.sql.DataFrame
+            A Spark DataFrame containing the data retrieved from the SQL query.
+            The DataFrame will include all columns from the specified table.
+        """
+        spark = SparkSession.builder.appName("DataLoader").getOrCreate()
+        query = "SELECT * FROM your_table"
+        df = spark.sql(query)
+        return df
+
+    def example_model_trainer(df):
+        """
+        Example model trainer that trains a model on the provided data.
+
+        This function is intended to be replaced with your own model training code.
+        It converts a Spark DataFrame to a Pandas DataFrame, splits the data into
+        training and testing sets, trains a RandomForestClassifier model, and returns
+        the trained model along with a sample input.
+
+        Parameters:
+        -----------
+        df : pyspark.sql.DataFrame
+            A Spark DataFrame containing the input data for model training. It should
+            include a 'target_column' that serves as the label for training.
+
+        Returns:
+        --------
+        model : sklearn.ensemble.RandomForestClassifier
+            The trained RandomForestClassifier model.
+        
+        sample_input : pandas.DataFrame
+            A single-row Pandas DataFrame representing a sample input from the training data.
+            This can be used for logging or testing purposes.
+        """
+        pdf = df.toPandas()
+
+        # Example of using Scikit-Learn for model training
+        from sklearn.model_selection import train_test_split
+        from sklearn.ensemble import RandomForestClassifier
+
+        X = pdf.drop('target_column', axis=1)
+        y = pdf['target_column']
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        return model, X_train.iloc[0:1]  # Return model and a sample input for logging
+
+    args = GeneralModelTrainer.parse_arguments()
+    trainer = GeneralModelTrainer(
+        experiment_name=args.experiment_name, 
+        model_name=args.model_name, 
+        env=args.env, 
+        data_loader=example_data_loader, 
+        model_trainer=example_model_trainer
+    )
+
+    trainer.setup_mlflow()
+    
+    data = trainer.load_data()
+    model_uri, model_name, model_version = trainer.train_and_log_model(data)
+    trainer.store_and_exit(model_uri, model_name, model_version)
+
+if __name__ == "__main__":
+    main()
