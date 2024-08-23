@@ -1,6 +1,6 @@
 new_cluster: &new_cluster
   new_cluster:
-    num_workers: 3
+    num_workers: 1
     spark_version: 15.3.x-cpu-ml-scala2.12
     node_type_id: i3.xlarge
     custom_tags:
@@ -21,24 +21,28 @@ resources:
       tasks:
         - task_key: Train
           job_cluster_key: model_training_job_cluster
-          notebook_task:
-            notebook_path: ../training/notebooks/Train.py
-            base_parameters:
-              env: ${bundle.target}
-              # TODO: Update training_data_path
-              training_data_path: /databricks-datasets/nyctaxi-with-zipcodes/subsampled
-              experiment_name: ${var.experiment_name}
-              {{ if (eq .input_include_models_in_unity_catalog `no`) }}model_name: ${var.model_name}
-              {{- else -}}model_name: ${bundle.target}.ml_team.${var.model_name}{{ end }}
-              # git source information of current ML resource deployment. It will be persisted as part of the workflow run
-              git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
+          spark_python_task:
+            python_file: ../training/train.py
+            parameters:
+              - "--env"
+              - "${bundle.target}"
+              - "--experiment_name"
+              - "${var.experiment_name}"
+              {{ if (eq .input_include_models_in_unity_catalog `no`) }}
+              - "--model_name"
+              - "${var.model_name}"
+              {{- else -}}
+              - "--model_name"
+              - "${bundle.target}.ml_team.${var.model_name}"
+              {{ end }}
+              
         - task_key: ModelValidation
           job_cluster_key: model_training_job_cluster
           depends_on:
             - task_key: Train
-          notebook_task:
-            notebook_path: ../validation/notebooks/ModelValidation.py
-            base_parameters:
+          spark_python_task:
+            python_file: ../validation/notebooks/ModelValidation.py
+            parameters:
               # A string describing the model type. The model type can be either "regressor" and "classifier".
               # Please refer to model_type parameter in mlflow.evaluate documentation https://mlflow.org/docs/latest/python_api/mlflow.html#mlflow.evaluate
               # TODO: update model_type
@@ -62,12 +66,11 @@ resources:
           job_cluster_key: model_training_job_cluster
           depends_on:
             - task_key: ModelValidation
-          notebook_task:
-            notebook_path: ../deployment/model_deployment/notebooks/ModelDeployment.py
-            base_parameters:
-              env: ${bundle.target}
-              # git source information of current ML resource deployment. It will be persisted as part of the workflow run
-              git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
+          spark_python_task:
+            python_file: ../deployment/deploy.py
+            parameters:
+              - "--env"
+              - "${bundle.target}"
       schedule:
         quartz_cron_expression: "0 0 9 * * ?" # daily at 9am
         timezone_id: UTC

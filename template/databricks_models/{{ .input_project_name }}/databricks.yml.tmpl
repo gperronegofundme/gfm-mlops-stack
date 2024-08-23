@@ -1,6 +1,6 @@
 # The name of the bundle. run `databricks bundle schema` to see the full bundle settings schema.
 bundle:
-  name: {{ .input_project_name }}
+  name: {{ .input_project_name }}-mlops-stack
 
 variables:
   experiment_name:
@@ -20,10 +20,31 @@ include:
   # TODO: uncomment once monitoring inference table has been created
   # - ./resources/monitoring-resource.yml
 
-# Deployment Target specific values for workspace
 targets:
-  dev: {{ if (eq .input_include_models_in_unity_catalog `yes`)}} # UC Catalog Name {{ end }}
+  # The 'dev' target, for development purposes. This target is the default.
+  dev:
+    # We use 'mode: development' to indicate this is a personal development copy:
+    # - Deployed resources get prefixed with '[dev my_user_name]'
+    # - Any job schedules and triggers are paused by default
+    # - The 'development' mode is used for Delta Live Tables pipelines
+    mode: development
     default: true
     workspace:
-      # TODO: add dev workspace URL
-      host: https://gfm-data-data-shared-test01.cloud.databricks.com
+      host: https://gofundme-data-shared-test01.cloud.databricks.com
+    # variables:
+    #   catalog_name: data_shared_test01
+  test:
+    workspace:
+      host: https://gofundme-data-staging.cloud.databricks.com
+
+  staging:
+    # We use 'mode: production' to indicate this is a production deployment.
+    # Doing so enables strict verification of the settings below.
+    mode: production
+    workspace:
+      host: https://gofundme-data-staging.cloud.databricks.com
+    
+  prod:
+    mode: production
+    workspace:
+      host: https://gofundme-data-prod.cloud.databricks.com
