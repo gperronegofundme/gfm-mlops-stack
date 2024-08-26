@@ -18,3 +18,12 @@ def get_deployed_model_stage_for_env(env):
         "test": "Production",
     }
     return _MODEL_STAGE_FOR_ENV[env]
+
+# Check if running as a job or interactively
+def is_running_as_job():
+    try:
+        # Get the job ID from the context tags
+        job_id = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get("jobId").get()
+        return job_id is not None
+    except:
+        return False

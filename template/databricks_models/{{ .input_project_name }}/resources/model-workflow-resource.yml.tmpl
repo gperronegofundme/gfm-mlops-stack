@@ -28,13 +28,8 @@ resources:
               - "${bundle.target}"
               - "--experiment_name"
               - "${var.experiment_name}"
-              {{ if (eq .input_include_models_in_unity_catalog `no`) }}
-              - "--model_name"
-              - "${var.model_name}"
-              {{- else -}}
               - "--model_name"
               - "${bundle.target}.ml_team.${var.model_name}"
-              {{ end }}
               
         - task_key: ModelValidation
           job_cluster_key: model_training_job_cluster

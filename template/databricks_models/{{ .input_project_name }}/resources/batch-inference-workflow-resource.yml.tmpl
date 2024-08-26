@@ -23,10 +23,8 @@ resources:
             base_parameters:
               env: ${bundle.target}
               input_table_name: taxi_scoring_sample
-              {{ if (eq .input_include_models_in_unity_catalog `no`) }}output_table_name: ${bundle.target}_{{ .input_project_name }}_predictions
-              {{- else -}}output_table_name: ${bundle.target}.ml_team.predictions{{ end }}
-              {{ if (eq .input_include_models_in_unity_catalog `no`) }}model_name: ${var.model_name}
-              {{- else -}}model_name: ${bundle.target}.ml_team.${var.model_name}{{ end }}
+              output_table_name: ${bundle.target}.ml_team.predictions
+              model_name: ${bundle.target}.ml_team.${var.model_name}
               # git source information of current ML resource deployment. It will be persisted as part of the workflow run
               git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
 

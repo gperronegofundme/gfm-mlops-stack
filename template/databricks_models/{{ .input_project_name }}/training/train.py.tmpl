@@ -3,31 +3,19 @@ import mlflow
 import mlflow.{{ .input_mlflow_flavor }}  # Import the MLflow flavor used for logging
 from mlflow.tracking import MlflowClient
 from pyspark.sql import SparkSession
+import sys
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).parent.parent.resolve()))
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.resolve()))
+from utils import is_running_as_job
+from base.mlflow_base import BaseMLflowClass
 
-class GeneralModelTrainer:
+class GeneralModelTrainer(BaseMLflowClass):
     def __init__(self, experiment_name, model_name, env, data_loader, model_trainer):
-        self.experiment_name = experiment_name
-        self.model_name = model_name
+        super().__init__(experiment_name, model_name)
         self.env = env
         self.data_loader = data_loader
         self.model_trainer = model_trainer
-        self.mlflow_client = MlflowClient()
-
-    def setup_mlflow(self):
-        """Sets up the MLflow experiment and registry URI."""
-        mlflow.set_experiment(self.experiment_name)
-        {{- if (eq .input_include_models_in_unity_catalog "yes") }}
-        mlflow.set_registry_uri('databricks-uc')
-        {{end -}}
-
-    def get_latest_model_version(self):
-        """Gets the latest version of the model from the MLflow registry."""
-        latest_version = 1
-        for mv in self.mlflow_client.search_model_versions(f"name='{self.model_name}'"):
-            version_int = int(mv.version)
-            if version_int > latest_version:
-                latest_version = version_int
-        return latest_version
 
     def load_data(self):
         """Loads data using the provided data loader function."""
@@ -40,12 +28,11 @@ class GeneralModelTrainer:
         model, X_train_sample = self.model_trainer(data)
 
         print("Logging model...")
-        # Log the model to MLflow
         mlflow.{{ .input_mlflow_flavor }}.log_model(
             model,
             artifact_path="model_artifact",
-            input_example=X_train_sample,  # Log an example of the input data
-            registered_model_name=self.model_name
+            input_example=input_example,  # Log an example of the input data
+            registered_model_name=self.model_name,
         )
 
         # Return the model version and URI
@@ -72,13 +59,8 @@ class GeneralModelTrainer:
         parser = argparse.ArgumentParser(description="Train and log an ML model with MLflow.")
         parser.add_argument('--experiment-name', type=str, required=True,
                             help="MLflow experiment name.")
-        {{- if (eq .input_include_models_in_unity_catalog "no") }}
-        parser.add_argument('--model-name', type=str, required=True, default="dev-{{template `model_name` .}}"
-                            help="Model name.")
-        {{else}}
         parser.add_argument('--model-name', type=str, required=True, default="dev.ml_team.{{template `model_name` .}}",
                             help="Full (three-level) model name.")
-        {{end -}}
         parser.add_argument('--env', type=str, choices=['dev', 'staging', 'prod'], default='dev',
                             help="Environment name (default: dev).")
         return parser.parse_args()
@@ -142,14 +124,24 @@ def main():
 
         return model, X_train.iloc[0:1]  # Return model and a sample input for logging
 
-    args = GeneralModelTrainer.parse_arguments()
-    trainer = GeneralModelTrainer(
-        experiment_name=args.experiment_name, 
-        model_name=args.model_name, 
-        env=args.env, 
-        data_loader=example_data_loader, 
-        model_trainer=example_model_trainer
-    )
+    if is_running_as_job():
+        args = GeneralModelTrainer.parse_arguments()
+        trainer = GeneralModelTrainer(
+            experiment_name=args.experiment_name, 
+            model_name=args.model_name, 
+            env=args.env, 
+            data_loader=example_data_loader, 
+            model_trainer=example_model_trainer
+        )
+    else:
+        current_user = spark.sql("select current_user() as user").collect()[0]["user"]
+        trainer = GeneralModelTrainer(
+            experiment_name=f"/Users/{current_user}/dev-{{ .input_project_name }}-experiment", 
+            model_name="dev-{{template `model_name` .}}", 
+            env="dev", 
+            data_loader=example_data_loader, 
+            model_trainer=example_model_trainer
+        )
 
     trainer.setup_mlflow()
     

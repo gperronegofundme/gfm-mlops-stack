@@ -5,6 +5,12 @@ import traceback
 import mlflow
 from mlflow.tracking.client import MlflowClient
 from pyspark.sql import SparkSession
+import sys
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).parent.parent.resolve()))
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.resolve()))
+from utils import is_running_as_job
+from base.mlflow_base import BaseMLflowClass
 
 class ModelValidation:
     def __init__(self, args):
